@@ -4,6 +4,16 @@ A native iOS app that displays precise time synced with NIST NTP servers, perfec
 
 Built with SwiftUI and featuring a retro terminal aesthetic matching the SkyChecker app.
 
+## 📱 Available on the App Store
+
+**ExactTimer is available for free on the iOS App Store!**
+
+[![Download on the App Store](https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg)](https://apps.apple.com/app/exacttimer)
+
+*No Xcode required — just download and go.*
+
+---
+
 ## Features
 
 - Accurate time synced with NIST time servers via NTP
