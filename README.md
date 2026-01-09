@@ -1,8 +1,8 @@
-# ExactTime
+# ExactTimer
 
 A native iOS app that displays precise time synced with NIST NTP servers, perfect for setting mechanical and automatic wristwatches.
 
-Built with SwiftUI and featuring a retro terminal aesthetic matching the SkyWatch app.
+Built with SwiftUI and featuring a retro terminal aesthetic matching the SkyChecker app.
 
 ## Features
 
@@ -25,17 +25,17 @@ Built with SwiftUI and featuring a retro terminal aesthetic matching the SkyWatc
 
 ## Installation Guide
 
-Follow these steps to download and install ExactTime on your iPhone.
+Follow these steps to download and install ExactTimer on your iPhone.
 
 ### Step 1: Download the Code
 
 **Option A: Using Git (recommended)**
 ```bash
-git clone https://github.com/adchamberlain/exact-time.git
+git clone https://github.com/adchamberlain/exact-timer.git
 ```
 
 **Option B: Download ZIP**
-1. Go to https://github.com/adchamberlain/exact-time
+1. Go to https://github.com/adchamberlain/exact-timer
 2. Click the green **"Code"** button
 3. Click **"Download ZIP"**
 4. Unzip the downloaded file
@@ -43,21 +43,21 @@ git clone https://github.com/adchamberlain/exact-time.git
 ### Step 2: Open in Xcode
 
 1. Open **Finder** and navigate to the downloaded folder
-2. Go to: `exact-time/ExactTime/`
-3. Double-click **`ExactTime.xcodeproj`** to open it in Xcode
+2. Go to: `exact-timer/ExactTimer/`
+3. Double-click **`ExactTimer.xcodeproj`** to open it in Xcode
 
 Or from Terminal:
 ```bash
-cd exact-time/ExactTime
-open ExactTime.xcodeproj
+cd exact-timer/ExactTimer
+open ExactTimer.xcodeproj
 ```
 
 ### Step 3: Configure Code Signing
 
 This allows the app to run on your personal iPhone.
 
-1. In Xcode, click on **"ExactTime"** in the left sidebar (the blue project icon at the top)
-2. Under **TARGETS**, select **"ExactTime"**
+1. In Xcode, click on **"ExactTimer"** in the left sidebar (the blue project icon at the top)
+2. Under **TARGETS**, select **"ExactTimer"**
 3. Click the **"Signing & Capabilities"** tab
 4. Check ✅ **"Automatically manage signing"**
 5. Click the **Team** dropdown:
@@ -99,7 +99,7 @@ The first time you install, your iPhone won't run the app until you trust it:
 ### Step 8: Launch the App
 
 1. Return to your iPhone home screen
-2. Find the **ExactTime** app icon
+2. Find the **ExactTimer** app icon
 3. Tap to open!
 
 The app will automatically sync with NIST time servers on launch.
@@ -131,7 +131,7 @@ This is normal with a free Apple ID. Just reconnect your iPhone and press ⌘R i
 
 ## How It Works
 
-ExactTime uses the **Network Time Protocol (NTP)** to sync with NIST (National Institute of Standards and Technology) time servers using Apple's Network framework:
+ExactTimer uses the **Network Time Protocol (NTP)** to sync with NIST (National Institute of Standards and Technology) time servers using Apple's Network framework:
 
 1. Sends NTP requests via UDP to NIST servers
 2. Measures round-trip time to calculate network latency

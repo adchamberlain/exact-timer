@@ -98,7 +98,7 @@ Reference
 
 ## Support URL
 ```
-https://github.com/adchamberlain/exact-time
+https://github.com/adchamberlain/exact-timer
 ```
 
 ## Marketing URL (optional)
@@ -108,7 +108,7 @@ https://andrewchamberlain.com
 
 ## Privacy Policy URL
 ```
-https://github.com/adchamberlain/exact-time/blob/main/PRIVACY_POLICY.md
+https://github.com/adchamberlain/exact-timer/blob/main/PRIVACY_POLICY.md
 ```
 
 ---

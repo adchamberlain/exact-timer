@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ExactTimeApp: App {
+struct ExactTimerApp: App {
     @StateObject private var ntpService = NTPService.shared
     @State private var showSplash = true
     
