@@ -1,4 +1,4 @@
-# ExactTime - App Store Metadata
+# ExactTimer - App Store Metadata
 
 Use this information when creating your app listing in App Store Connect.
 
@@ -6,7 +6,7 @@ Use this information when creating your app listing in App Store Connect.
 
 ## App Name
 ```
-ExactTime
+ExactTimer
 ```
 
 ## Subtitle (30 characters max)
@@ -17,9 +17,9 @@ Precision Clock for Watches
 ## Description (4000 characters max)
 
 ```
-Set your watch to the exact second with ExactTime.
+Set your watch to the exact second with ExactTimer.
 
-ExactTime syncs with official NIST atomic clocks to display the precise time, accurate to the millisecond. Perfect for setting mechanical watches, automatic timepieces, or any clock that needs to be perfectly synchronized.
+ExactTimer syncs with official NIST atomic clocks to display the precise time, accurate to the millisecond. Perfect for setting mechanical watches, automatic timepieces, or any clock that needs to be perfectly synchronized.
 
 WHY YOU NEED THIS
 Your iPhone's clock is usually close, but not exact. ExactTime bypasses your device clock entirely and syncs directly with the same atomic clocks that define official U.S. time.
@@ -47,7 +47,7 @@ PERFECT FOR
 • Professionals syncing to official time
 
 TECHNICAL DETAILS
-ExactTime queries multiple NIST time servers using standard NTP protocol:
+ExactTimer queries multiple NIST time servers using standard NTP protocol:
 • time.nist.gov
 • time.apple.com
 • time-a-wwv.nist.gov

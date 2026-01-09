@@ -1,16 +1,16 @@
-# Privacy Policy for ExactTime
+# Privacy Policy for ExactTimer
 
 **Last Updated: January 9, 2026**
 
 ## Overview
 
-ExactTime ("the App") is developed by Andrew Chamberlain. This privacy policy explains how the App handles your information.
+ExactTimer ("the App") is developed by Andrew Chamberlain. This privacy policy explains how the App handles your information.
 
 ## Information We Collect
 
 ### We Do NOT Collect Any Personal Data
 
-ExactTime is designed with privacy as a core principle:
+ExactTimer is designed with privacy as a core principle:
 
 - **No personal information** is collected (name, email, etc.)
 - **No location data** is collected or used
@@ -64,4 +64,4 @@ Website: https://andrewchamberlain.com
 
 ## Summary
 
-**ExactTime collects no personal data.** It simply syncs time from public NTP servers and displays it on your screen.
+**ExactTimer collects no personal data.** It simply syncs time from public NTP servers and displays it on your screen.
