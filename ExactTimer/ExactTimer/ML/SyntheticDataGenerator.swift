@@ -1,0 +1,443 @@
+import UIKit
+import CoreGraphics
+import Accelerate
+
+/// Generates synthetic training data from a reference watch photo
+class SyntheticDataGenerator {
+
+    /// Configuration for data generation
+    struct Config {
+        var outputSize: CGSize = CGSize(width: 224, height: 224)
+        var samplesPerHour: Int = 60  // Generate 60 samples per hour = 720 total for 12 hours
+        var includeSeconds: Bool = true
+        var augmentationEnabled: Bool = true
+    }
+
+    private let config: Config
+
+    init(config: Config = Config()) {
+        self.config = config
+    }
+
+    /// Training sample with image and labels
+    struct TrainingSample {
+        let image: CGImage
+        let hour: Int      // 0-11
+        let minute: Int    // 0-59
+        let second: Int    // 0-59
+    }
+
+    /// Generate synthetic training data from watch components
+    /// - Parameters:
+    ///   - dialImage: The watch dial with hands removed (inpainted)
+    ///   - hourHandMask: Binary mask of the hour hand
+    ///   - minuteHandMask: Binary mask of the minute hand
+    ///   - secondHandMask: Binary mask of the second hand (optional)
+    ///   - center: Center point of the watch (normalized 0-1)
+    ///   - referenceTime: The time shown in the reference photo
+    /// - Returns: Array of training samples
+    func generateTrainingData(
+        dialImage: UIImage,
+        hourHandMask: UIImage,
+        minuteHandMask: UIImage,
+        secondHandMask: UIImage?,
+        center: CGPoint,
+        referenceTime: (hour: Int, minute: Int, second: Int)
+    ) -> [TrainingSample] {
+        var samples: [TrainingSample] = []
+
+        // Convert to CGImages for processing
+        guard let dialCG = dialImage.cgImage,
+              let hourMaskCG = hourHandMask.cgImage,
+              let minuteMaskCG = minuteHandMask.cgImage else {
+            return samples
+        }
+
+        let secondMaskCG = secondHandMask?.cgImage
+
+        // Calculate base angles from reference time
+        let refHourAngle = hourAngle(hour: referenceTime.hour, minute: referenceTime.minute)
+        let refMinuteAngle = minuteAngle(minute: referenceTime.minute, second: referenceTime.second)
+        let refSecondAngle = secondAngle(second: referenceTime.second)
+
+        // Generate samples for each hour
+        for hour in 0..<12 {
+            let samplesForHour = config.samplesPerHour
+
+            for sampleIdx in 0..<samplesForHour {
+                // Distribute minutes evenly
+                let minute = (sampleIdx * 60) / samplesForHour
+                let second = config.includeSeconds ? Int.random(in: 0..<60) : 0
+
+                // Calculate target angles
+                let targetHourAngle = hourAngle(hour: hour, minute: minute)
+                let targetMinuteAngle = minuteAngle(minute: minute, second: second)
+                let targetSecondAngle = secondAngle(second: second)
+
+                // Calculate rotation deltas from reference position
+                let hourRotation = targetHourAngle - refHourAngle
+                let minuteRotation = targetMinuteAngle - refMinuteAngle
+                let secondRotation = targetSecondAngle - refSecondAngle
+
+                // Composite the image
+                if let composited = compositeWatchImage(
+                    dial: dialCG,
+                    hourMask: hourMaskCG,
+                    minuteMask: minuteMaskCG,
+                    secondMask: secondMaskCG,
+                    center: center,
+                    hourRotation: hourRotation,
+                    minuteRotation: minuteRotation,
+                    secondRotation: secondRotation
+                ) {
+                    // Apply augmentations if enabled
+                    let finalImage = config.augmentationEnabled ?
+                        applyAugmentations(to: composited) : composited
+
+                    if let resized = resizeImage(finalImage, to: config.outputSize) {
+                        samples.append(TrainingSample(
+                            image: resized,
+                            hour: hour,
+                            minute: minute,
+                            second: second
+                        ))
+                    }
+                }
+            }
+        }
+
+        return samples
+    }
+
+    // MARK: - Angle Calculations
+
+    /// Calculate hour hand angle (0 = 12 o'clock, clockwise in radians)
+    private func hourAngle(hour: Int, minute: Int) -> CGFloat {
+        let hourNormalized = CGFloat(hour % 12) + CGFloat(minute) / 60.0
+        return (hourNormalized / 12.0) * 2 * .pi
+    }
+
+    /// Calculate minute hand angle
+    private func minuteAngle(minute: Int, second: Int) -> CGFloat {
+        let minuteNormalized = CGFloat(minute) + CGFloat(second) / 60.0
+        return (minuteNormalized / 60.0) * 2 * .pi
+    }
+
+    /// Calculate second hand angle
+    private func secondAngle(second: Int) -> CGFloat {
+        return (CGFloat(second) / 60.0) * 2 * .pi
+    }
+
+    // MARK: - Image Compositing
+
+    /// Composite watch dial with rotated hands
+    private func compositeWatchImage(
+        dial: CGImage,
+        hourMask: CGImage,
+        minuteMask: CGImage,
+        secondMask: CGImage?,
+        center: CGPoint,
+        hourRotation: CGFloat,
+        minuteRotation: CGFloat,
+        secondRotation: CGFloat
+    ) -> CGImage? {
+        let width = dial.width
+        let height = dial.height
+        let centerPixel = CGPoint(x: CGFloat(width) * center.x, y: CGFloat(height) * center.y)
+
+        // Create drawing context
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+
+        // Draw dial background
+        context.draw(dial, in: rect)
+
+        // Draw rotated hour hand
+        drawRotatedHand(context: context, hand: hourMask, center: centerPixel, rotation: hourRotation, rect: rect)
+
+        // Draw rotated minute hand
+        drawRotatedHand(context: context, hand: minuteMask, center: centerPixel, rotation: minuteRotation, rect: rect)
+
+        // Draw rotated second hand if present
+        if let secondMask = secondMask {
+            drawRotatedHand(context: context, hand: secondMask, center: centerPixel, rotation: secondRotation, rect: rect)
+        }
+
+        return context.makeImage()
+    }
+
+    /// Draw a hand rotated around the center
+    private func drawRotatedHand(
+        context: CGContext,
+        hand: CGImage,
+        center: CGPoint,
+        rotation: CGFloat,
+        rect: CGRect
+    ) {
+        context.saveGState()
+
+        // Translate to center, rotate, translate back
+        context.translateBy(x: center.x, y: center.y)
+        context.rotate(by: rotation)
+        context.translateBy(x: -center.x, y: -center.y)
+
+        // Draw the hand
+        context.draw(hand, in: rect)
+
+        context.restoreGState()
+    }
+
+    // MARK: - Augmentations
+
+    /// Apply random augmentations to training image
+    private func applyAugmentations(to image: CGImage) -> CGImage {
+        var result = image
+
+        // Random brightness adjustment (±10%)
+        if Bool.random() {
+            let factor = CGFloat.random(in: 0.9...1.1)
+            if let adjusted = adjustBrightness(image: result, factor: factor) {
+                result = adjusted
+            }
+        }
+
+        // Random slight rotation (±3 degrees) to simulate imperfect camera alignment
+        if Bool.random() {
+            let angle = CGFloat.random(in: -0.05...0.05)
+            if let rotated = rotateImage(result, by: angle) {
+                result = rotated
+            }
+        }
+
+        return result
+    }
+
+    private func adjustBrightness(image: CGImage, factor: CGFloat) -> CGImage? {
+        let width = image.width
+        let height = image.height
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+
+        // Draw with brightness adjustment using blend mode
+        context.setFillColor(gray: factor > 1 ? 1 : 0, alpha: abs(1 - factor))
+        context.draw(image, in: rect)
+        context.setBlendMode(factor > 1 ? .lighten : .darken)
+        context.fill(rect)
+
+        return context.makeImage()
+    }
+
+    private func rotateImage(_ image: CGImage, by angle: CGFloat) -> CGImage? {
+        let width = image.width
+        let height = image.height
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        let center = CGPoint(x: CGFloat(width) / 2, y: CGFloat(height) / 2)
+
+        context.translateBy(x: center.x, y: center.y)
+        context.rotate(by: angle)
+        context.translateBy(x: -center.x, y: -center.y)
+        context.draw(image, in: rect)
+
+        return context.makeImage()
+    }
+
+    private func resizeImage(_ image: CGImage, to size: CGSize) -> CGImage? {
+        guard let context = CGContext(
+            data: nil,
+            width: Int(size.width),
+            height: Int(size.height),
+            bitsPerComponent: 8,
+            bytesPerRow: Int(size.width) * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(origin: .zero, size: size))
+
+        return context.makeImage()
+    }
+}
+
+// MARK: - Dial Inpainting
+
+extension SyntheticDataGenerator {
+
+    /// Simple inpainting to remove hands from dial
+    /// Uses the hour hand mask and minute hand mask to identify hand pixels,
+    /// then fills with nearby dial color
+    func inpaintDial(
+        referenceImage: UIImage,
+        hourHandMask: UIImage,
+        minuteHandMask: UIImage,
+        secondHandMask: UIImage?
+    ) -> UIImage? {
+        guard let refCG = referenceImage.cgImage,
+              let hourMaskCG = hourHandMask.cgImage,
+              let minuteMaskCG = minuteHandMask.cgImage else {
+            return nil
+        }
+
+        let width = refCG.width
+        let height = refCG.height
+
+        // Create combined mask of all hands
+        guard let maskContext = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+
+        // Clear to black (no mask)
+        maskContext.setFillColor(gray: 0, alpha: 1)
+        maskContext.fill(rect)
+
+        // Add hand masks in white
+        maskContext.setBlendMode(.lighten)
+        maskContext.draw(hourMaskCG, in: rect)
+        maskContext.draw(minuteMaskCG, in: rect)
+        if let secondMaskCG = secondHandMask?.cgImage {
+            maskContext.draw(secondMaskCG, in: rect)
+        }
+
+        guard let combinedMask = maskContext.makeImage() else { return nil }
+
+        // For MVP, use simple nearest-neighbor fill
+        // A more sophisticated approach would use PatchMatch or similar
+        guard let inpainted = simpleInpaint(image: refCG, mask: combinedMask) else {
+            return nil
+        }
+
+        return UIImage(cgImage: inpainted)
+    }
+
+    /// Simple inpainting using edge pixel colors
+    private func simpleInpaint(image: CGImage, mask: CGImage) -> CGImage? {
+        let width = image.width
+        let height = image.height
+
+        // Get pixel data
+        guard let imageContext = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        imageContext.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let maskContext = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+
+        maskContext.draw(mask, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let imageData = imageContext.data,
+              let maskData = maskContext.data else { return nil }
+
+        let imagePixels = imageData.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        let maskPixels = maskData.bindMemory(to: UInt8.self, capacity: width * height)
+
+        // Simple fill: for masked pixels, copy from nearest unmasked pixel
+        // This is a basic approach - could be improved with more sophisticated inpainting
+        for y in 0..<height {
+            for x in 0..<width {
+                let maskIdx = y * width + x
+                if maskPixels[maskIdx] > 128 {
+                    // This pixel is masked, find nearest unmasked
+                    if let (r, g, b) = findNearestUnmaskedColor(
+                        x: x, y: y,
+                        imagePixels: imagePixels,
+                        maskPixels: maskPixels,
+                        width: width,
+                        height: height
+                    ) {
+                        let pixelIdx = (y * width + x) * 4
+                        imagePixels[pixelIdx] = r
+                        imagePixels[pixelIdx + 1] = g
+                        imagePixels[pixelIdx + 2] = b
+                    }
+                }
+            }
+        }
+
+        return imageContext.makeImage()
+    }
+
+    private func findNearestUnmaskedColor(
+        x: Int, y: Int,
+        imagePixels: UnsafeMutablePointer<UInt8>,
+        maskPixels: UnsafeMutablePointer<UInt8>,
+        width: Int, height: Int
+    ) -> (UInt8, UInt8, UInt8)? {
+        // Search in expanding squares
+        for radius in 1..<50 {
+            for dy in -radius...radius {
+                for dx in -radius...radius {
+                    if abs(dx) != radius && abs(dy) != radius { continue }
+
+                    let nx = x + dx
+                    let ny = y + dy
+
+                    if nx >= 0 && nx < width && ny >= 0 && ny < height {
+                        let maskIdx = ny * width + nx
+                        if maskPixels[maskIdx] < 128 {
+                            let pixelIdx = (ny * width + nx) * 4
+                            return (
+                                imagePixels[pixelIdx],
+                                imagePixels[pixelIdx + 1],
+                                imagePixels[pixelIdx + 2]
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        return nil
+    }
+}
