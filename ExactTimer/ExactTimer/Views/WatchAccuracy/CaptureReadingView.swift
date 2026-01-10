@@ -90,12 +90,8 @@ struct CaptureReadingView: View {
                 .font(.terminalSmall)
                 .foregroundColor(.terminalDim)
 
-            TimelineView(.periodic(from: .now, by: 0.1)) { context in
-                let time = ntpService.now()
-                let formatter = DateFormatter()
-                formatter.dateFormat = "HH:mm:ss"
-
-                Text(formatter.string(from: time))
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                Text(formatTime(ntpService.now()))
                     .font(.terminal(32))
                     .foregroundColor(.terminalBright)
                     .monospacedDigit()
@@ -489,6 +485,12 @@ struct CaptureReadingView: View {
     }
 
     // MARK: - Helpers
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
 
     private func calculateDeviation(watchHour: Int, watchMinute: Int, watchSecond: Int, referenceTime: Date) -> Double {
         let watchSeconds = watchHour * 3600 + watchMinute * 60 + watchSecond
