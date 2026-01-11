@@ -45,6 +45,9 @@ class WatchMLService: ObservableObject {
             statusMessage = "Validating watch data..."
             trainingProgress = 0.05
 
+            // Give UI a chance to update
+            try await Task.sleep(nanoseconds: 100_000_000)
+
             guard let referenceData = watch.referencePhotoData,
                   let referenceImage = UIImage(data: referenceData),
                   let hourMaskData = watch.hourHandMask,
@@ -62,22 +65,42 @@ class WatchMLService: ObservableObject {
             let secondMask: UIImage? = watch.secondHandMask.flatMap { UIImage(data: $0) }
             let center = CGPoint(x: centerX, y: centerY)
 
-            // Step 2: Inpaint dial (remove hands)
+            // Step 2: Inpaint dial (remove hands) - run off main thread
             statusMessage = "Preparing dial image..."
             trainingProgress = 0.1
 
-            guard let cleanDial = dataGenerator.inpaintDial(
-                referenceImage: referenceImage,
-                hourHandMask: hourMask,
-                minuteHandMask: minuteMask,
-                secondHandMask: secondMask
-            ) else {
+            print("[ML] Starting inpainting...")
+            print("[ML] Reference image size: \(referenceImage.size)")
+            print("[ML] Hour mask size: \(hourMask.size)")
+            print("[ML] Minute mask size: \(minuteMask.size)")
+
+            // Give UI a chance to update
+            try await Task.sleep(nanoseconds: 50_000_000)
+
+            let cleanDial = await Task.detached { [dataGenerator] in
+                let result = dataGenerator.inpaintDial(
+                    referenceImage: referenceImage,
+                    hourHandMask: hourMask,
+                    minuteHandMask: minuteMask,
+                    secondHandMask: secondMask
+                )
+                print("[ML] Inpainting complete, result: \(result != nil ? "success" : "nil")")
+                return result
+            }.value
+
+            guard let cleanDial else {
+                print("[ML] Inpainting failed - cleanDial is nil")
                 throw WatchMLError.inpaintingFailed
             }
+
+            print("[ML] Clean dial size: \(cleanDial.size)")
 
             // Step 3: Generate synthetic training data
             statusMessage = "Generating training data..."
             trainingProgress = 0.2
+
+            // Give UI a chance to update
+            try await Task.sleep(nanoseconds: 50_000_000)
 
             let samples = await Task.detached { [dataGenerator] in
                 return dataGenerator.generateTrainingData(

@@ -15,6 +15,7 @@ struct WatchSetupView: View {
     @State private var watchBrand: String = ""
     @State private var referenceImage: UIImage?
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var showingCamera: Bool = false
 
     // Hand extraction state
     @State private var extractedHourHand: UIImage?
@@ -30,6 +31,14 @@ struct WatchSetupView: View {
     // Training state
     @StateObject private var mlService = WatchMLService()
 
+    // Focus state for text fields
+    @FocusState private var focusedField: FocusedField?
+
+    enum FocusedField {
+        case watchName
+        case watchBrand
+    }
+
     enum SetupStep: Int, CaseIterable {
         case nameEntry
         case photoCapture
@@ -41,7 +50,7 @@ struct WatchSetupView: View {
 
     var body: some View {
         NavigationStack {
-            VStack {
+            VStack(spacing: 0) {
                 // Progress indicator
                 progressIndicator
 
@@ -49,7 +58,16 @@ struct WatchSetupView: View {
                 ScrollView {
                     stepContent
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 20)
+                        .padding(.top, 20)
+                        .padding(.bottom, 20)
+                }
+
+                // Fixed navigation buttons at bottom
+                if shouldShowNavigationButtons {
+                    navigationButtons
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                        .background(Color.black)
                 }
             }
             .background(Color.black)
@@ -101,6 +119,59 @@ struct WatchSetupView: View {
         .padding(.vertical, 16)
     }
 
+    private var shouldShowNavigationButtons: Bool {
+        switch currentStep {
+        case .training, .complete:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private var navigationButtons: some View {
+        HStack {
+            // Back button
+            if currentStep != .nameEntry {
+                backButton {
+                    switch currentStep {
+                    case .photoCapture:
+                        currentStep = .nameEntry
+                    case .handExtraction:
+                        currentStep = .photoCapture
+                    case .referenceTime:
+                        currentStep = .handExtraction
+                    default:
+                        break
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Next button
+            switch currentStep {
+            case .nameEntry:
+                nextButton(enabled: !watchName.isEmpty) {
+                    currentStep = .photoCapture
+                }
+            case .photoCapture:
+                nextButton(enabled: referenceImage != nil) {
+                    currentStep = .handExtraction
+                }
+            case .handExtraction:
+                nextButton(enabled: extractedHourHand != nil && extractedMinuteHand != nil) {
+                    currentStep = .referenceTime
+                }
+            case .referenceTime:
+                nextButton(enabled: true) {
+                    startTraining()
+                }
+            default:
+                EmptyView()
+            }
+        }
+    }
+
     @ViewBuilder
     private var stepContent: some View {
         switch currentStep {
@@ -145,6 +216,11 @@ struct WatchSetupView: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.terminalGreen, lineWidth: 1)
                     )
+                    .focused($focusedField, equals: .watchName)
+                    .submitLabel(.next)
+                    .onSubmit {
+                        focusedField = .watchBrand
+                    }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -161,13 +237,17 @@ struct WatchSetupView: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.terminalDim, lineWidth: 1)
                     )
+                    .focused($focusedField, equals: .watchBrand)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        focusedField = nil
+                    }
             }
-
-            Spacer()
-                .frame(height: 30)
-
-            nextButton(enabled: !watchName.isEmpty) {
-                currentStep = .photoCapture
+        }
+        .onAppear {
+            // Auto-focus the name field after a brief delay to pre-warm the keyboard
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                focusedField = .watchName
             }
         }
     }
@@ -204,46 +284,67 @@ struct WatchSetupView: View {
                         .foregroundColor(.terminalDim)
                 }
             } else {
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    VStack(spacing: 12) {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 40))
-                            .foregroundColor(.terminalGreen)
+                VStack(spacing: 16) {
+                    // Camera button
+                    Button {
+                        showingCamera = true
+                    } label: {
+                        VStack(spacing: 12) {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(.terminalGreen)
 
-                        Text("Tap to select photo")
-                            .font(.terminalBody)
-                            .foregroundColor(.terminalGreen)
+                            Text("Take Photo")
+                                .font(.terminalBody)
+                                .foregroundColor(.terminalGreen)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 140)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.terminalGreen, lineWidth: 2)
+                        )
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 200)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.terminalDim, style: StrokeStyle(lineWidth: 2, dash: [8]))
-                    )
-                }
-                .onChange(of: selectedPhotoItem) { _, newItem in
-                    Task {
-                        if let data = try? await newItem?.loadTransferable(type: Data.self),
-                           let image = UIImage(data: data) {
-                            referenceImage = image
+
+                    Text("or")
+                        .font(.terminalCaption)
+                        .foregroundColor(.terminalDim)
+
+                    // Photo library picker
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        VStack(spacing: 8) {
+                            Image(systemName: "photo.on.rectangle")
+                                .font(.system(size: 30))
+                                .foregroundColor(.terminalDim)
+
+                            Text("Choose from Library")
+                                .font(.terminalBody)
+                                .foregroundColor(.terminalDim)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 80)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.terminalDim, style: StrokeStyle(lineWidth: 1, dash: [8]))
+                        )
+                    }
+                    .onChange(of: selectedPhotoItem) { _, newItem in
+                        Task {
+                            if let data = try? await newItem?.loadTransferable(type: Data.self),
+                               let image = UIImage(data: data) {
+                                referenceImage = image
+                                // Auto-advance to hand extraction after selecting photo
+                                currentStep = .handExtraction
+                            }
                         }
                     }
                 }
             }
-
-            Spacer()
-                .frame(height: 30)
-
-            HStack {
-                backButton {
-                    currentStep = .nameEntry
-                }
-
-                Spacer()
-
-                nextButton(enabled: referenceImage != nil) {
-                    currentStep = .handExtraction
-                }
+        }
+        .sheet(isPresented: $showingCamera) {
+            CameraPicker(image: $referenceImage) {
+                // Auto-advance to hand extraction after taking photo
+                currentStep = .handExtraction
             }
         }
     }
@@ -251,14 +352,10 @@ struct WatchSetupView: View {
     // MARK: - Step 3: Hand Extraction
 
     private var handExtractionStep: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("> Identify Watch Hands")
                 .font(.terminalTitle)
                 .foregroundColor(.terminalGreen)
-
-            Text("Tap on each hand to select it.\nStart with the hour hand.")
-                .font(.terminalCaption)
-                .foregroundColor(.terminalDim)
 
             if let image = referenceImage {
                 HandExtractionView(
@@ -268,42 +365,8 @@ struct WatchSetupView: View {
                     secondHandMask: $extractedSecondHand,
                     centerPoint: $centerPoint
                 )
-                .frame(height: 350)
+                .frame(height: 500)
             }
-
-            // Status indicators
-            VStack(alignment: .leading, spacing: 8) {
-                handStatusRow("Hour hand", isSet: extractedHourHand != nil)
-                handStatusRow("Minute hand", isSet: extractedMinuteHand != nil)
-                handStatusRow("Second hand", isSet: extractedSecondHand != nil)
-                handStatusRow("Center point", isSet: true)  // Always set with default
-            }
-
-            Spacer()
-                .frame(height: 20)
-
-            HStack {
-                backButton {
-                    currentStep = .photoCapture
-                }
-
-                Spacer()
-
-                nextButton(enabled: extractedHourHand != nil && extractedMinuteHand != nil) {
-                    currentStep = .referenceTime
-                }
-            }
-        }
-    }
-
-    private func handStatusRow(_ label: String, isSet: Bool) -> some View {
-        HStack {
-            Text(isSet ? "[x]" : "[ ]")
-                .font(.terminalBody)
-                .foregroundColor(isSet ? .terminalGreen : .terminalDim)
-            Text(label)
-                .font(.terminalBody)
-                .foregroundColor(isSet ? .terminalGreen : .terminalDim)
         }
     }
 
@@ -358,21 +421,6 @@ struct WatchSetupView: View {
             Text("Selected: \(referenceHour):\(String(format: "%02d", referenceMinute)):\(String(format: "%02d", referenceSecond))")
                 .font(.terminalBody)
                 .foregroundColor(.terminalBright)
-
-            Spacer()
-                .frame(height: 30)
-
-            HStack {
-                backButton {
-                    currentStep = .handExtraction
-                }
-
-                Spacer()
-
-                nextButton(enabled: true) {
-                    startTraining()
-                }
-            }
         }
     }
 
@@ -429,7 +477,27 @@ struct WatchSetupView: View {
             }
 
             Spacer()
+
+            // Cancel button
+            Button {
+                cancelTraining()
+            } label: {
+                Text("[Cancel]")
+                    .font(.terminalBody)
+                    .foregroundColor(.terminalDim)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 24)
+            }
+            .padding(.bottom, 20)
         }
+    }
+
+    private func cancelTraining() {
+        mlService.isTraining = false
+        mlService.trainingProgress = 0
+        mlService.statusMessage = ""
+        mlService.errorMessage = nil
+        currentStep = .referenceTime
     }
 
     // MARK: - Step 6: Complete
@@ -537,6 +605,52 @@ struct WatchSetupView: View {
             } catch {
                 mlService.errorMessage = error.localizedDescription
             }
+        }
+    }
+}
+
+// MARK: - Camera Picker
+
+struct CameraPicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+    var onCapture: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
+
+    init(image: Binding<UIImage?>, onCapture: (() -> Void)? = nil) {
+        self._image = image
+        self.onCapture = onCapture
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraPicker
+
+        init(_ parent: CameraPicker) {
+            self.parent = parent
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let uiImage = info[.originalImage] as? UIImage {
+                parent.image = uiImage
+                parent.onCapture?()
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
         }
     }
 }

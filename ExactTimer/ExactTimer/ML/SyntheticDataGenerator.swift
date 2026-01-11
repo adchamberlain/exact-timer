@@ -302,14 +302,37 @@ extension SyntheticDataGenerator {
         minuteHandMask: UIImage,
         secondHandMask: UIImage?
     ) -> UIImage? {
-        guard let refCG = referenceImage.cgImage,
-              let hourMaskCG = hourHandMask.cgImage,
-              let minuteMaskCG = minuteHandMask.cgImage else {
+        print("[Inpaint] Starting with image: \(referenceImage.size)")
+
+        // Downscale to reasonable size for processing (max 800px on longest side)
+        let maxDimension: CGFloat = 800
+        let scale = min(maxDimension / referenceImage.size.width, maxDimension / referenceImage.size.height, 1.0)
+        let targetSize = CGSize(
+            width: referenceImage.size.width * scale,
+            height: referenceImage.size.height * scale
+        )
+
+        print("[Inpaint] Scaling to: \(targetSize) (scale factor: \(scale))")
+
+        guard let scaledRef = downscale(referenceImage, to: targetSize),
+              let scaledHourMask = downscale(hourHandMask, to: targetSize),
+              let scaledMinuteMask = downscale(minuteHandMask, to: targetSize) else {
+            print("[Inpaint] Failed to downscale images")
+            return nil
+        }
+
+        let scaledSecondMask = secondHandMask.flatMap { downscale($0, to: targetSize) }
+
+        guard let refCG = scaledRef.cgImage,
+              let hourMaskCG = scaledHourMask.cgImage,
+              let minuteMaskCG = scaledMinuteMask.cgImage else {
+            print("[Inpaint] Failed to get CGImages")
             return nil
         }
 
         let width = refCG.width
         let height = refCG.height
+        print("[Inpaint] Processing at \(width)x\(height)")
 
         // Create combined mask of all hands
         guard let maskContext = CGContext(
@@ -332,18 +355,25 @@ extension SyntheticDataGenerator {
         maskContext.setBlendMode(.lighten)
         maskContext.draw(hourMaskCG, in: rect)
         maskContext.draw(minuteMaskCG, in: rect)
-        if let secondMaskCG = secondHandMask?.cgImage {
+        if let secondMaskCG = scaledSecondMask?.cgImage {
             maskContext.draw(secondMaskCG, in: rect)
         }
 
-        guard let combinedMask = maskContext.makeImage() else { return nil }
+        guard let combinedMask = maskContext.makeImage() else {
+            print("[Inpaint] Failed to create combined mask")
+            return nil
+        }
+
+        print("[Inpaint] Combined mask created, starting inpaint...")
 
         // For MVP, use simple nearest-neighbor fill
         // A more sophisticated approach would use PatchMatch or similar
         guard let inpainted = simpleInpaint(image: refCG, mask: combinedMask) else {
+            print("[Inpaint] simpleInpaint returned nil")
             return nil
         }
 
+        print("[Inpaint] Inpainting complete!")
         return UIImage(cgImage: inpainted)
     }
 
@@ -351,6 +381,7 @@ extension SyntheticDataGenerator {
     private func simpleInpaint(image: CGImage, mask: CGImage) -> CGImage? {
         let width = image.width
         let height = image.height
+        print("[Inpaint] simpleInpaint: \(width)x\(height) = \(width * height) pixels")
 
         // Get pixel data
         guard let imageContext = CGContext(
@@ -385,10 +416,15 @@ extension SyntheticDataGenerator {
 
         // Simple fill: for masked pixels, copy from nearest unmasked pixel
         // This is a basic approach - could be improved with more sophisticated inpainting
+        var maskedPixelCount = 0
+        var processedCount = 0
+        let startTime = Date()
+
         for y in 0..<height {
             for x in 0..<width {
                 let maskIdx = y * width + x
                 if maskPixels[maskIdx] > 128 {
+                    maskedPixelCount += 1
                     // This pixel is masked, find nearest unmasked
                     if let (r, g, b) = findNearestUnmaskedColor(
                         x: x, y: y,
@@ -401,10 +437,18 @@ extension SyntheticDataGenerator {
                         imagePixels[pixelIdx] = r
                         imagePixels[pixelIdx + 1] = g
                         imagePixels[pixelIdx + 2] = b
+                        processedCount += 1
                     }
                 }
             }
+            // Log progress every 100 rows
+            if y % 100 == 0 {
+                print("[Inpaint] Row \(y)/\(height), masked so far: \(maskedPixelCount)")
+            }
         }
+
+        let elapsed = Date().timeIntervalSince(startTime)
+        print("[Inpaint] Completed: \(maskedPixelCount) masked pixels, \(processedCount) filled, took \(String(format: "%.2f", elapsed))s")
 
         return imageContext.makeImage()
     }
@@ -439,5 +483,14 @@ extension SyntheticDataGenerator {
             }
         }
         return nil
+    }
+
+    /// Downscale image to target size
+    private func downscale(_ image: UIImage, to targetSize: CGSize) -> UIImage? {
+        UIGraphicsBeginImageContextWithOptions(targetSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: targetSize))
+        let scaledImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return scaledImage
     }
 }

@@ -4,6 +4,7 @@ import SwiftData
 /// Detail view for a single watch showing readings and accuracy trends
 struct WatchDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Bindable var watch: Watch
 
     @State private var showingCapture = false
@@ -213,6 +214,7 @@ struct WatchDetailView: View {
             try? FileManager.default.removeItem(atPath: modelPath)
         }
         modelContext.delete(watch)
+        dismiss()
     }
 }
 

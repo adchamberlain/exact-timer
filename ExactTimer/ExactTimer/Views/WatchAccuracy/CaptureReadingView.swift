@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import PhotosUI
 
 /// View for capturing a new accuracy reading from a watch
 struct CaptureReadingView: View {
@@ -11,7 +10,7 @@ struct CaptureReadingView: View {
     let watch: Watch
 
     @State private var capturedImage: UIImage?
-    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var showingCamera: Bool = false
     @State private var prediction: WatchMLService.TimePrediction?
     @State private var captureTime: Date?
 
@@ -123,7 +122,9 @@ struct CaptureReadingView: View {
                 .foregroundColor(.terminalDim)
                 .multilineTextAlignment(.center)
 
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+            Button {
+                showingCamera = true
+            } label: {
                 VStack(spacing: 16) {
                     Image(systemName: "camera.viewfinder")
                         .font(.system(size: 60))
@@ -140,13 +141,12 @@ struct CaptureReadingView: View {
                         .stroke(Color.terminalGreen, style: StrokeStyle(lineWidth: 2, dash: [8]))
                 )
             }
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        capturedImage = image
-                        captureTime = ntpService.now()  // Record NTP time at capture
-                        state = .captured
+            .sheet(isPresented: $showingCamera) {
+                ReadingCameraPicker(ntpService: ntpService) { image, timestamp in
+                    capturedImage = image
+                    captureTime = timestamp  // NTP time captured at exact moment of photo
+                    state = .captured
+                    Task {
                         await processImage()
                     }
                 }
@@ -477,7 +477,6 @@ struct CaptureReadingView: View {
 
     private func resetCapture() {
         capturedImage = nil
-        selectedPhotoItem = nil
         prediction = nil
         captureTime = nil
         errorMessage = nil
@@ -531,6 +530,50 @@ struct CaptureReadingView: View {
             return .yellow
         } else {
             return .red
+        }
+    }
+}
+
+// MARK: - Camera Picker for Readings
+
+/// Camera picker that captures the exact NTP time when the photo is taken
+struct ReadingCameraPicker: UIViewControllerRepresentable {
+    let ntpService: NTPService
+    let onCapture: (UIImage, Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: ReadingCameraPicker
+
+        init(_ parent: ReadingCameraPicker) {
+            self.parent = parent
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            // Capture NTP time immediately when photo is confirmed
+            let captureTimestamp = parent.ntpService.now()
+
+            if let uiImage = info[.originalImage] as? UIImage {
+                parent.onCapture(uiImage, captureTimestamp)
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
         }
     }
 }
